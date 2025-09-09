@@ -1,0 +1,194 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  database:
+    image: postgres:14-alpine
+    container_name: wholesale-db
+    environment:
+      POSTGRES_DB: wholesale_agent
+      POSTGRES_USER: wholesale_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-wholesale_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wholesale_user -d wholesale_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - wholesale-network
+    restart: unless-stopped
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: wholesale-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - wholesale-network
+    restart: unless-stopped
+
+  # Wholesale AI Agent Application
+  wholesale-agent:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: wholesale-agent-app
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Application settings
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
+      
+      # Database configuration
+      - DATABASE_URL=postgresql://wholesale_user:${DB_PASSWORD:-wholesale_password}@database:5432/wholesale_agent
+      
+      # LLM configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-3.5-turbo}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1000}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+      
+      # Security
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_STRUCTURED=${LOG_STRUCTURED:-true}
+      - LOG_DIR=/app/logs
+      
+      # Performance
+      - QUERY_TIMEOUT=${QUERY_TIMEOUT:-30}
+      - MAX_CONCURRENT_QUERIES=${MAX_CONCURRENT_QUERIES:-10}
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      
+      # Monitoring
+      - ENABLE_METRICS=${ENABLE_METRICS:-true}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - ./config:/app/config
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    networks:
+      - wholesale-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "wholesale_agent.cli.main", "--config-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: wholesale-nginx
+    depends_on:
+      - wholesale-agent
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - wholesale-network
+    restart: unless-stopped
+    profiles:
+      - nginx
+
+  # Prometheus for monitoring (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wholesale-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - wholesale-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana for dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wholesale-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - wholesale-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  wholesale-network:
+    driver: bridge
+    name: wholesale-network

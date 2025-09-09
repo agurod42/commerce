@@ -1,0 +1,13 @@
+# RAG (Retrieval-Augmented Generation) dependencies
+# Install these separately if you want to use RAG features
+
+# Core requirements first
+-r requirements.txt
+
+# RAG-specific dependencies
+torch>=1.11.0
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+
+# Alternative for GPU users (uncomment if you have CUDA):
+# faiss-gpu>=1.7.0

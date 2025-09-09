@@ -1,0 +1,93 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+htmlcov
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Documentation build
+docs/_build/
+
+# Local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Backup files
+*.backup
+*.bak
+
+# Temporary files
+tmp/
+temp/
+
+# Data directories (add if they contain sensitive data)
+data/
+backups/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Local configuration
+config.local.json
+config.*.local.json
